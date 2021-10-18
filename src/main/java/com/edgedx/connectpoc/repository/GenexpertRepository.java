@@ -21,4 +21,6 @@ public interface GenexpertRepository extends JpaRepository<Genexpert, Long> {
     Integer countByErrorIsNotNullAndErrorIsNotNullAndErrorNotIn(Collection<String> errors);
 
     List<Genexpert> findAllByIsExportedFalse();
+
+    Optional<Genexpert> findTopByDeviceNameOrderByStartTimeDesc(String deviceName);
 }

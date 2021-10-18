@@ -21,4 +21,6 @@ public interface AbbottM2000Repository extends JpaRepository<AbbottM2000, Long> 
     Integer countByTestErrorIsNotNullAndTestErrorIsNotNullAndTestErrorNotIn(Collection<String> errors);
 
     List<AbbottM2000> findAllByIsExportedFalse();
+
+    Optional<AbbottM2000> findTopByDeviceCodeOrderByTestDatetimeDesc(String deviceCode);
 }

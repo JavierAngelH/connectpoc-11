@@ -14,6 +14,7 @@ import lombok.Cleanup;
 import lombok.extern.java.Log;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.Level;
 
@@ -636,14 +638,13 @@ public class FacsprestoServiceImpl implements FacsprestoService {
                     HbCtrlProcess.setVersion(prestoBase.getVersion());
                     HbCtrlProcess.setDeviceCode(prestoBase.getDeviceCode());
                     HbCtrlProcess.setLabName(prestoBase.getLabName());
-
                     HbCtrlProcess.setRunId(tempBDPresto.getC0());
                     HbCtrlProcess.setRunDatetime(DateUtils.parseDateTime(cleanDate(tempBDPresto.getC1())));
                     HbCtrlProcess.setOperator(tempBDPresto.getC2());
                     HbCtrlProcess.setReagentLotId(tempBDPresto.getC3());
                     HbCtrlProcess
                             .setReagentLotExpDate(DateUtils.parseDate(cleanDate(tempBDPresto.getC4())));
-                    HbCtrlProcess.setProcessLotID(tempBDPresto.getC5());
+                    HbCtrlProcess.setProcessLotId(tempBDPresto.getC5());
                     HbCtrlProcess
                             .setProcessLotExpDate(DateUtils.parseDate(cleanDate(tempBDPresto.getC6())));
                     HbCtrlProcess.setLevel(tempBDPresto.getC7());
@@ -714,6 +715,256 @@ public class FacsprestoServiceImpl implements FacsprestoService {
     private String cleanDate(String source) {
         String str = source.replace("!", "");
         return str;
+    }
+
+
+    @Override
+    public void exportBDPrestoFile(File targetFolder, Constants.PRESTO_CATEGORY category) throws IOException {
+        List<FacsprestoInstrumentQc> instrumentQcList = new ArrayList<>();
+        List<FacsprestoCd4Control> cd4ControlList = new ArrayList<>();
+        List<FacsprestoHbControl> hbControlList = new ArrayList<>();
+        List<FacsprestoPatientSample> patientSampleList = new ArrayList<>();
+        String deviceId = "";
+        switch (category) {
+            case INSTRUMENT_QC:
+                instrumentQcList = facsprestoInstrumentQcRepository.findAllByIsExportedFalse();
+                if (instrumentQcList.isEmpty())
+                    return;
+                deviceId = instrumentQcList.get(0).getDeviceCode();
+                break;
+            case CD4_CONTROL_PROCESS:
+                cd4ControlList = facsprestoCd4ControlRepository.findAllByIsExportedFalse();
+                if (cd4ControlList.isEmpty())
+                    return;
+                deviceId = cd4ControlList.get(0).getDeviceCode();
+                break;
+            case HB_CONTROL_PROCESS:
+                hbControlList = facsprestoHbControlRepository.findAllByIsExportedFalse();
+                if (hbControlList.isEmpty())
+                    return;
+                deviceId = hbControlList.get(0).getDeviceCode();
+                break;
+            case PATIENT_SAMPLE:
+                patientSampleList = facsprestoPatientSampleRepository.findAllByIsExportedFalse();
+                if (patientSampleList.isEmpty())
+                    return;
+                deviceId = patientSampleList.get(0).getDeviceCode();
+                break;
+            default:
+                break;
+        }
+
+        String NEW_LINE_SEPARATOR = "\n";
+        CSVFormat csvFileFormat = CSVFormat.DEFAULT.builder().setRecordSeparator(NEW_LINE_SEPARATOR).build();
+        File expFile = null;
+        Optional<NodeHealthStatistics> nodeHealthStatistics = nodeHealthStatisticsRepository.findTopByOrderByLogDateDesc();
+        Optional<NodeConfiguration> nodeConfiguration = nodeConfigurationRepository.findTopByOrderByFacilityDesc();
+        if (nodeConfiguration.isEmpty() || !nodeConfiguration.get().getIsExported()) {
+            log.warning("Node configuration isn't exported yet. " + category + "  Data won't get exported.");
+            return;
+        }
+
+        String macId = "";
+        if (nodeHealthStatistics.isPresent())
+            macId = nodeHealthStatistics.get().getMacId();
+
+        String fName = category + "-" + nodeConfiguration.get().getFacility();
+        String fUniqueKey = new SimpleDateFormat("yyMMddhhmmssSSS").format(new Date());
+        expFile = new File(targetFolder + File.separator + fName + "-"
+                + deviceId + "(" + fUniqueKey + ").csv");
+        @Cleanup FileWriter fileWriter = new FileWriter(expFile);
+        // initialize CSVPrinter object
+        @Cleanup CSVPrinter csvFilePrinter = new CSVPrinter(fileWriter, csvFileFormat);
+        // write header
+        switch (category) {
+            case INSTRUMENT_QC:
+                csvFilePrinter.printRecord(Constants.instrumentQcResultsTemplateFormat_H);
+                break;
+            case CD4_CONTROL_PROCESS:
+                csvFilePrinter.printRecord(Constants.cD4ProcessCtrlResultsTemplateFormat_H);
+                break;
+            case HB_CONTROL_PROCESS:
+                csvFilePrinter.printRecord(Constants.hbProcessCtrlResultsTemplateFormat_H);
+                break;
+            case PATIENT_SAMPLE:
+                csvFilePrinter.printRecord(Constants.patientSampleResultsTemplateFormat_H);
+                break;
+            default:
+                break;
+        }
+
+        switch (category) {
+            case INSTRUMENT_QC:
+                for (FacsprestoInstrumentQc data : instrumentQcList) {
+                    List<Object> tempData = writeInstrumentQcResults(data, macId, nodeConfiguration.get());
+                    csvFilePrinter.printRecord(tempData);
+                }
+                break;
+            case CD4_CONTROL_PROCESS:
+                for (FacsprestoCd4Control data : cd4ControlList) {
+                    List<Object> tempData = writeCd4ProcessResults(data, macId, nodeConfiguration.get());
+                    csvFilePrinter.printRecord(tempData);
+                }
+                break;
+            case HB_CONTROL_PROCESS:
+                for (FacsprestoHbControl data : hbControlList) {
+                    List<Object> tempData = writeHbProcessResults(data, macId, nodeConfiguration.get());
+                    csvFilePrinter.printRecord(tempData);
+                }
+                break;
+            case PATIENT_SAMPLE:
+                for (FacsprestoPatientSample data : patientSampleList) {
+                    List<Object> tempData = writePatientResults(data, macId, nodeConfiguration.get());
+                    csvFilePrinter.printRecord(tempData);
+                }
+                break;
+            default:
+                break;
+        }
+
+        for (FacsprestoInstrumentQc test : instrumentQcList) {
+            test.setIsExported(true);
+            facsprestoInstrumentQcRepository.save(test);
+        }
+        for (FacsprestoPatientSample test : patientSampleList) {
+            test.setIsExported(true);
+           facsprestoPatientSampleRepository.save(test);
+        }
+        for (FacsprestoHbControl test : hbControlList) {
+            test.setIsExported(true);
+            facsprestoHbControlRepository.save(test);
+        }
+        for (FacsprestoCd4Control test : cd4ControlList) {
+            test.setIsExported(true);
+            facsprestoCd4ControlRepository.save(test);
+        }
+        log.info(category + " file was created successfully");
+    }
+
+    private List<Object> writeCd4ProcessResults(FacsprestoCd4Control data, String macId, NodeConfiguration nodeConfiguration) {
+        List<Object> tempData = new ArrayList<>();
+        try {
+            tempData.add(macId);
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(nodeConfiguration.getCountry());
+            tempData.add(nodeConfiguration.getProvince());
+            tempData.add(nodeConfiguration.getDistrict());
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(data.getDeviceCode());
+            tempData.add(data.getRunId());
+            tempData.add(data.getRunDatetime().format(DateUtils.TIME_FORMAT));
+            tempData.add(data.getOperator());
+            tempData.add(data.getReagentLotId());
+            tempData.add(data.getReagentLotExpDate().format(DateUtils.DATE_FORMAT));
+            tempData.add(data.getProcessLotId());
+            tempData.add(data.getProcessLotExpDate().format(DateUtils.DATE_FORMAT));
+            tempData.add(data.getLevel());
+            tempData.add(data.getExpCd4Lower());
+            tempData.add(data.getExpCd4Upper());
+            tempData.add(data.getExpPercentCd4Lower());
+            tempData.add(data.getExpPercentCd4Upper());
+            tempData.add(data.getReagentqcPperF());
+            tempData.add(data.getCd4());
+            tempData.add(data.getPercentCD4());
+            tempData.add(data.getPass());
+            tempData.add(data.getErrorCode());
+            return tempData;
+        } catch (Exception e) {
+            log.log(Level.SEVERE, "Error in CsvFileWriter for --" + data.getDeviceCode()
+                    + "-- operation failed", e);
+            return tempData;
+        }
+    }
+
+    private List<Object> writeHbProcessResults(FacsprestoHbControl data, String macId, NodeConfiguration nodeConfiguration) {
+        List<Object> tempData = new ArrayList<>();
+        try {
+            tempData.add(macId);
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(nodeConfiguration.getCountry());
+            tempData.add(nodeConfiguration.getProvince());
+            tempData.add(nodeConfiguration.getDistrict());
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(data.getDeviceCode());
+            tempData.add(data.getRunId());
+            tempData.add(data.getRunDatetime().format(DateUtils.TIME_FORMAT));
+            tempData.add(data.getOperator());
+            tempData.add(data.getReagentLotId());
+            tempData.add(data.getReagentLotExpDate().format(DateUtils.DATE_FORMAT));
+            tempData.add(data.getProcessLotId());
+            tempData.add(data.getProcessLotExpDate().format(DateUtils.DATE_FORMAT));
+            tempData.add(data.getLevel());
+            tempData.add(data.getExpHbLower());
+            tempData.add(data.getExpHbUpper());
+            tempData.add(data.getReagentqcPperF());
+            tempData.add(data.getHbgPerDl());
+            tempData.add(data.getPass());
+            tempData.add(data.getErrorCode());
+            return tempData;
+        } catch (Exception e) {
+            log.log(Level.SEVERE, "Error in CsvFileWriter for --" + data.getDeviceCode()
+                    + "-- operation failed", e);
+            return tempData;
+        }
+    }
+
+    private List<Object> writeInstrumentQcResults(FacsprestoInstrumentQc data, String macId, NodeConfiguration
+            nodeConfiguration) {
+        List<Object> tempData = new ArrayList<>();
+        try {
+            tempData.add(macId);
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(nodeConfiguration.getCountry());
+            tempData.add(nodeConfiguration.getProvince());
+            tempData.add(nodeConfiguration.getDistrict());
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(data.getDeviceCode());
+            tempData.add(data.getRunId());
+            tempData.add(data.getRunDatetime().format(DateUtils.TIME_FORMAT));
+            tempData.add(data.getOperator());
+            tempData.add(data.getNormalCount());
+            tempData.add(data.getLowCount());
+            tempData.add(data.getPass());
+            tempData.add(data.getErrorCode());
+            return tempData;
+        } catch (Exception e) {
+            log.log(Level.SEVERE, "Error in CsvFileWriter for --" + data.getDeviceCode()
+                    + "-- operation failed", e);
+            return tempData;
+        }
+    }
+
+    private List<Object> writePatientResults(FacsprestoPatientSample data, String macId, NodeConfiguration
+            nodeConfiguration) {
+        List<Object> tempData = new ArrayList<>();
+        try {
+            tempData.add(macId);
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(nodeConfiguration.getCountry());
+            tempData.add(nodeConfiguration.getProvince());
+            tempData.add(nodeConfiguration.getDistrict());
+            tempData.add(nodeConfiguration.getFacility());
+            tempData.add(data.getDeviceCode());
+            tempData.add(data.getRunId());
+            tempData.add(data.getRunDatetime().format(DateUtils.TIME_FORMAT));
+            tempData.add(data.getOperator());
+            tempData.add(data.getReagentLotId());
+            tempData.add(data.getReagentLotExpDate().format(DateUtils.DATE_FORMAT));
+            tempData.add(data.getPatientId());
+            tempData.add(data.getInstQcPassed());
+            tempData.add(data.getReagentQcPassed());
+            tempData.add(data.getCd4());
+            tempData.add(data.getPercentCd4());
+            tempData.add(data.getHb());
+            tempData.add(data.getErrorCode());
+            tempData.add(data.getSysLogdate().format(DateUtils.TIME_FORMAT));
+            tempData.add(data.getNascopTimestamp().format(DateUtils.TIME_FORMAT));
+            return tempData;
+        } catch (Exception e) {
+            log.log(Level.SEVERE, "Error in CsvFileWriter for --" + data.getDeviceCode()
+                    + "-- operation failed", e);
+            return tempData;
+        }
     }
 
 

@@ -45,7 +45,7 @@ public class FacsprestoHbControl {
     private LocalDate reagentLotExpDate;
 
     @Column(length = 250)
-    private String processLotID;
+    private String processLotId;
 
     private LocalDate processLotExpDate;
 

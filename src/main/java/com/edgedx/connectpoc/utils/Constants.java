@@ -96,12 +96,12 @@ public class Constants {
             "Report Type", "Reagent Lot ID", "Reagent Serial Number", "Control Lot Number", "Result", "Units", "Reference Range", "Operator", "Test Error",
             "Test Datetime", "Imported by node on", "Sent to nascop on" };
 
-    public static enum PIMA_CATEGORY {
+    public enum PIMA_CATEGORY {
         PIMA_CD4,
         PIMA_BEADS;
     }
 
-    public static enum PRESTO_CATEGORY {
+    public enum PRESTO_CATEGORY {
         CD4_CONTROL_PROCESS,
         HB_CONTROL_PROCESS,
         INSTRUMENT_QC,

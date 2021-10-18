@@ -10,4 +10,8 @@ public interface NodeService {
     void exportNodeDevicesToFile(File targetFolder) throws IOException;
 
     void updateProject();
+
+    void verifyLatestSentDataByDevice();
+
+    void verifyLast7DaysContinuousData();
 }
